@@ -43,7 +43,20 @@ function M.run(req, opts)
     _current_job = nil
   end
 
-  local args = curl_builder.build(req)
+  -- Raw curl command pass-through (# @curl syntax)
+  -- We append --include so response headers are visible, then run via shell.
+  local args
+  if req.is_curl and req.curl_raw then
+    local raw = req.curl_raw
+    -- Ensure --include is present so curl_parser can split headers/body
+    if not raw:find("--include") and not raw:find(" %-i ") then
+      raw = raw .. " --include"
+    end
+    args = { "sh", "-c", raw }
+  else
+    args = curl_builder.build(req)
+  end
+
   local stdout_chunks = {}
   local stderr_chunks = {}
 

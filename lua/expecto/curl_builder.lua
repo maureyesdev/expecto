@@ -122,20 +122,51 @@ function M.build(req, opts)
     end
   end
 
-  -- Request body
-  if req.body_file then
-    if req.body_file_vars then
-      -- Body file with variable processing — would need to write a temp file
-      -- For Phase 3: read the file and pass content directly
-      vim.list_extend(args, { "--data-binary", "@" .. req.body_file })
-    else
-      vim.list_extend(args, { "--data-binary", "@" .. req.body_file })
+  -- SSL/TLS certificates (per-host config)
+  local host = (req.url or ""):match("https?://([^/:]+)")
+  if host and cfg.certificates then
+    local cert_cfg = cfg.certificates[host]
+    if cert_cfg then
+      if cert_cfg.cert then
+        vim.list_extend(args, { "--cert", cert_cfg.cert })
+      end
+      if cert_cfg.key then
+        vim.list_extend(args, { "--key", cert_cfg.key })
+      end
+      if cert_cfg.ca then
+        vim.list_extend(args, { "--cacert", cert_cfg.ca })
+      end
+      if cert_cfg.verify == false then
+        table.insert(args, "--insecure")
+      end
     end
-  elseif req.body and req.body ~= "" then
-    -- Inline body
+  end
+
+  -- GraphQL: build {"query": ..., "variables": {...}} body
+  -- body_file_vars=true (resolved body) is handled by variables.resolve_request
+  local body     = req.body
+  local body_file = req.body_file
+
+  if req.is_graphql and body then
+    local gql = { query = body }
+    if type(req.graphql_variables) == "table" then
+      gql.variables = req.graphql_variables
+    end
+    body      = vim.fn.json_encode(gql)
+    body_file = nil  -- use the inline body we just built
+    -- Inject Content-Type: application/json if not already present
+    if not lower_headers["content-type"] then
+      vim.list_extend(args, { "-H", "Content-Type: application/json" })
+    end
+  end
+
+  -- Request body
+  if body_file then
+    vim.list_extend(args, { "--data-binary", "@" .. body_file })
+  elseif body and body ~= "" then
     -- HEAD requests have no body by convention
     if req.method ~= "HEAD" then
-      vim.list_extend(args, { "--data-binary", req.body })
+      vim.list_extend(args, { "--data-binary", body })
     end
   end
 

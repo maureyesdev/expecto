@@ -270,6 +270,19 @@ function M.resolve_request(req, env_vars, request_vars)
     resolved.body = M.resolve(req.body, ctx)
   end
 
+  -- Body file with variable substitution (<@ syntax)
+  -- Read the file content, resolve vars, promote to inline body so the
+  -- curl builder can send it with --data-binary without a temp file.
+  if req.body_file and req.body_file_vars then
+    local f = io.open(req.body_file, "r")
+    if f then
+      local content = f:read("*a")
+      f:close()
+      resolved.body      = M.resolve(content, ctx)
+      resolved.body_file = nil  -- signal curl_builder to use inline body
+    end
+  end
+
   return resolved
 end
 

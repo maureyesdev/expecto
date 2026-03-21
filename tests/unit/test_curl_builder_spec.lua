@@ -300,3 +300,134 @@ describe("expecto.curl_builder — cookie jar", function()
     assert.is_false(vim.tbl_contains(args, "-b"))
   end)
 end)
+
+-- ── GraphQL body construction ─────────────────────────────────────────────────
+
+describe("expecto.curl_builder — GraphQL", function()
+  it("wraps body as {query: ...} JSON for GraphQL requests", function()
+    local args = builder.build(req({
+      method     = "POST",
+      is_graphql = true,
+      body       = "{ user { id name } }",
+    }))
+    local db_idx = nil
+    for i, v in ipairs(args) do
+      if v == "--data-binary" then db_idx = i break end
+    end
+    assert.is_not_nil(db_idx)
+    local body_str = args[db_idx + 1]
+    local ok, body = pcall(vim.fn.json_decode, body_str)
+    assert.is_true(ok)
+    assert.equals("{ user { id name } }", body.query)
+    assert.is_nil(body.variables)
+  end)
+
+  it("includes variables when graphql_variables is set", function()
+    local args = builder.build(req({
+      method             = "POST",
+      is_graphql         = true,
+      body               = "query GetUser($id: ID!) { user(id: $id) { name } }",
+      graphql_variables  = { id = "u-123" },
+    }))
+    local db_idx = nil
+    for i, v in ipairs(args) do
+      if v == "--data-binary" then db_idx = i break end
+    end
+    local body_str = args[db_idx + 1]
+    local _, body = pcall(vim.fn.json_decode, body_str)
+    assert.equals("u-123", body.variables.id)
+  end)
+
+  it("injects Content-Type: application/json when not set", function()
+    local args = builder.build(req({
+      method     = "POST",
+      is_graphql = true,
+      body       = "{ __typename }",
+      headers    = {},
+    }))
+    local found = false
+    for i, v in ipairs(args) do
+      if v == "-H" and args[i + 1] == "Content-Type: application/json" then
+        found = true break
+      end
+    end
+    assert.is_true(found)
+  end)
+
+  it("does NOT inject Content-Type when already present", function()
+    local args = builder.build(req({
+      method     = "POST",
+      is_graphql = true,
+      body       = "{ __typename }",
+      headers    = { ["Content-Type"] = "application/json; charset=utf-8" },
+    }))
+    local count = 0
+    for i, v in ipairs(args) do
+      if v == "-H" and (args[i + 1] or ""):find("^Content%-Type") then
+        count = count + 1
+      end
+    end
+    -- Only one Content-Type header should be present
+    assert.equals(1, count)
+  end)
+end)
+
+-- ── SSL certificates ──────────────────────────────────────────────────────────
+
+describe("expecto.curl_builder — SSL certificates", function()
+  before_each(function() config.setup({}) end)
+
+  it("adds --cert and --key for matching host", function()
+    config.setup({
+      certificates = {
+        ["api.example.com"] = {
+          cert = "/certs/client.pem",
+          key  = "/certs/client.key",
+        },
+      },
+    })
+    local args = builder.build(req({ url = "https://api.example.com/v1" }))
+    assert.truthy(vim.tbl_contains(args, "--cert"))
+    assert.truthy(vim.tbl_contains(args, "/certs/client.pem"))
+    assert.truthy(vim.tbl_contains(args, "--key"))
+    assert.truthy(vim.tbl_contains(args, "/certs/client.key"))
+  end)
+
+  it("adds --cacert for custom CA", function()
+    config.setup({
+      certificates = {
+        ["internal.corp"] = { ca = "/certs/corp-ca.pem" },
+      },
+    })
+    local args = builder.build(req({ url = "https://internal.corp/api" }))
+    assert.truthy(vim.tbl_contains(args, "--cacert"))
+    assert.truthy(vim.tbl_contains(args, "/certs/corp-ca.pem"))
+  end)
+
+  it("adds --insecure when verify=false", function()
+    config.setup({
+      certificates = {
+        ["dev.local"] = { verify = false },
+      },
+    })
+    local args = builder.build(req({ url = "https://dev.local/api" }))
+    assert.truthy(vim.tbl_contains(args, "--insecure"))
+  end)
+
+  it("does NOT add cert flags for non-matching host", function()
+    config.setup({
+      certificates = {
+        ["other.host"] = { cert = "/certs/other.pem" },
+      },
+    })
+    local args = builder.build(req({ url = "https://api.example.com/v1" }))
+    assert.is_false(vim.tbl_contains(args, "--cert"))
+  end)
+
+  it("does nothing when certificates config is empty", function()
+    config.setup({ certificates = {} })
+    local args = builder.build(req())
+    assert.is_false(vim.tbl_contains(args, "--cert"))
+    assert.is_false(vim.tbl_contains(args, "--insecure"))
+  end)
+end)

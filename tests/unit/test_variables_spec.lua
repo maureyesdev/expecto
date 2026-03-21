@@ -150,23 +150,24 @@ end)
 
 -- ── resolve_request ───────────────────────────────────────────────────────────
 
-describe("expecto.variables — resolve_request", function()
-  local function make_req(overrides)
-    return vim.tbl_deep_extend("force", {
-      method   = "GET",
-      url      = "https://example.com/api",
-      headers  = {},
-      body     = nil,
-      file_vars = {},
-      meta     = { no_redirect = false, no_cookie_jar = false },
-      prompts  = {},
-      is_curl  = false,
-      is_graphql = false,
-      body_file = nil,
-      body_file_vars = false,
-    }, overrides or {})
-  end
+--- Shared helper: build a minimal Request object for resolve_request tests.
+local function make_req(overrides)
+  return vim.tbl_deep_extend("force", {
+    method   = "GET",
+    url      = "https://example.com/api",
+    headers  = {},
+    body     = nil,
+    file_vars = {},
+    meta     = { no_redirect = false, no_cookie_jar = false },
+    prompts  = {},
+    is_curl  = false,
+    is_graphql = false,
+    body_file = nil,
+    body_file_vars = false,
+  }, overrides or {})
+end
 
+describe("expecto.variables — resolve_request", function()
   it("resolves file vars in URL", function()
     local req = make_req({
       url = "{{baseUrl}}/users",
@@ -215,6 +216,61 @@ describe("expecto.variables — resolve_request", function()
   it("handles request with no body gracefully", function()
     local req = make_req({ body = nil })
     local resolved = vars.resolve_request(req)
+    assert.is_nil(resolved.body)
+  end)
+end)
+
+-- ── Body file with variable resolution (<@ syntax) ────────────────────────────
+
+describe("expecto.variables — body file var resolution", function()
+  it("reads file content and resolves vars when body_file_vars=true", function()
+    local tmp = os.tmpname()
+    local f = io.open(tmp, "w")
+    f:write('{"token":"{{token}}","host":"{{host}}"}')
+    f:close()
+
+    local req = make_req({
+      body           = nil,
+      body_file      = tmp,
+      body_file_vars = true,
+      file_vars      = { token = "abc", host = "localhost" },
+    })
+    local resolved = vars.resolve_request(req)
+
+    assert.equals('{"token":"abc","host":"localhost"}', resolved.body)
+    assert.is_nil(resolved.body_file)  -- promoted to inline body
+
+    os.remove(tmp)
+  end)
+
+  it("resolves env_vars in body file content", function()
+    local tmp = os.tmpname()
+    local f = io.open(tmp, "w")
+    f:write("Bearer {{token}}")
+    f:close()
+
+    local req = make_req({
+      body           = nil,
+      body_file      = tmp,
+      body_file_vars = true,
+    })
+    local resolved = vars.resolve_request(req, { token = "env-tok" })
+
+    assert.equals("Bearer env-tok", resolved.body)
+
+    os.remove(tmp)
+  end)
+
+  it("does NOT read file when body_file_vars=false (plain < ref)", function()
+    local req = make_req({
+      body           = nil,
+      body_file      = "/some/file.json",
+      body_file_vars = false,
+    })
+    local resolved = vars.resolve_request(req)
+
+    -- body_file preserved; body stays nil
+    assert.equals("/some/file.json", resolved.body_file)
     assert.is_nil(resolved.body)
   end)
 end)
