@@ -79,6 +79,8 @@ function M.run()
       if original_req.name then
         require("expecto.request_vars").store(original_req.name, resp)
       end
+      -- Push to history (Phase 7)
+      require("expecto.history").push(original_req, resp)
       response.show(resp, original_req)
     end,
     on_error = function(msg)
@@ -131,6 +133,33 @@ function M.reload_env()
   else
     vim.notify("expecto: " .. (err or "reload failed"), vim.log.levels.ERROR)
   end
+end
+
+--- Browse request history and re-display a previous response.
+function M.show_history()
+  local history  = require("expecto.history")
+  local response = require("expecto.response")
+  local entries  = history.get_all()
+
+  if #entries == 0 then
+    vim.notify("expecto: no request history yet", vim.log.levels.INFO)
+    return
+  end
+
+  vim.ui.select(entries, {
+    prompt = "expecto — request history (newest first):",
+    format_item = function(e)
+      local ts     = os.date("%H:%M:%S", e.timestamp)
+      local status = e.response.status_code or "?"
+      local method = e.req.method or "?"
+      local url    = e.req.url    or "?"
+      return ("[%s] %s %s → %s"):format(ts, method, url, status)
+    end,
+  }, function(entry)
+    if entry then
+      response.show(entry.response, entry.req)
+    end
+  end)
 end
 
 --- Show the curl command for the request under cursor (debugging).
