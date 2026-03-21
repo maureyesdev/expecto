@@ -1,0 +1,36 @@
+### Environment variable usage
+# Uses {{baseUrl}}, {{token}}, {{version}} from the active environment
+
+# @name listUsers
+GET {{baseUrl}}/{{version}}/users
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+
+### Shared variable access
+GET {{baseUrl}}/{{version}}/info
+X-Api-Version: {{apiVersion}}
+X-Shared-Key: {{sharedKey}}
+
+###
+
+### Mixed file + env vars
+@endpoint = /users/me
+
+GET {{baseUrl}}{{endpoint}}
+Authorization: Bearer {{token}}
+
+###
+
+### System vars in body
+POST {{baseUrl}}/{{version}}/events
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "event_id": "{{$guid}}",
+  "timestamp": "{{$timestamp}}",
+  "type": "login",
+  "user_count": {{$randomInt 1 1000}}
+}

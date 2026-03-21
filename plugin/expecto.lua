@@ -25,6 +25,14 @@ vim.api.nvim_create_user_command("ExpectoCurl", function()
   require("expecto").show_curl_command()
 end, { desc = "Show the curl command for the request under cursor" })
 
+vim.api.nvim_create_user_command("ExpectoSwitchEnv", function()
+  require("expecto").switch_env()
+end, { desc = "Switch the active environment" })
+
+vim.api.nvim_create_user_command("ExpectoReloadEnv", function()
+  require("expecto").reload_env()
+end, { desc = "Reload environments from the .expecto.json file" })
+
 -- ── Filetype keymaps (buffer-local, set on FileType http) ────────────────────
 
 vim.api.nvim_create_autocmd("FileType", {
@@ -40,8 +48,10 @@ vim.api.nvim_create_autocmd("FileType", {
       })
     end
 
-    map("<leader>hr", "<Cmd>ExpectoRun<CR>",    "run request at cursor")
-    map("<leader>hc", "<Cmd>ExpectoCancel<CR>", "cancel in-flight request")
-    map("<leader>hk", "<Cmd>ExpectoCurl<CR>",   "show curl command")
+    map("<leader>hr", "<Cmd>ExpectoRun<CR>",       "run request at cursor")
+    map("<leader>hc", "<Cmd>ExpectoCancel<CR>",   "cancel in-flight request")
+    map("<leader>hk", "<Cmd>ExpectoCurl<CR>",     "show curl command")
+    map("<leader>he", "<Cmd>ExpectoSwitchEnv<CR>","switch active environment")
+    map("<leader>hR", "<Cmd>ExpectoReloadEnv<CR>","reload environments from file")
   end,
 })

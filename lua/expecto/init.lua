@@ -53,12 +53,14 @@ function M.run()
     return
   end
 
-  local variables = require("expecto.variables")
-  local executor  = require("expecto.executor")
-  local response  = require("expecto.response")
+  local variables   = require("expecto.variables")
+  local environment = require("expecto.environment")
+  local executor    = require("expecto.executor")
+  local response    = require("expecto.response")
 
-  -- Resolve variables (file vars + system vars)
-  local resolved = variables.resolve_request(req)
+  -- Resolve variables (file vars + env vars + system vars)
+  local env_vars = environment.get_vars()
+  local resolved = variables.resolve_request(req, env_vars)
 
   -- Validate URL before sending
   if not resolved.url or resolved.url == "" then
@@ -85,6 +87,47 @@ function M.cancel()
   require("expecto.executor").cancel()
 end
 
+--- Interactively pick and switch to an environment.
+function M.switch_env()
+  local env = require("expecto.environment")
+  local names = env.list_names()
+
+  if #names == 0 then
+    vim.notify(
+      "expecto: no environments loaded (create .expecto.json in project root)",
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  local current = env.current_name()
+  -- Put current env first in the list for visibility
+  table.sort(names, function(a, b)
+    if a == current then return true end
+    if b == current then return false end
+    return a < b
+  end)
+
+  vim.ui.select(names, {
+    prompt = "expecto — switch environment:",
+    format_item = function(name)
+      return (name == current) and (name .. "  ← active") or name
+    end,
+  }, function(choice)
+    if choice then env.switch(choice) end
+  end)
+end
+
+--- Reload the environment file from disk.
+function M.reload_env()
+  local ok, err = require("expecto.environment").reload()
+  if ok then
+    vim.notify("expecto: environments reloaded", vim.log.levels.INFO)
+  else
+    vim.notify("expecto: " .. (err or "reload failed"), vim.log.levels.ERROR)
+  end
+end
+
 --- Show the curl command for the request under cursor (debugging).
 function M.show_curl_command()
   local req = request_at_cursor()
@@ -93,10 +136,12 @@ function M.show_curl_command()
     return
   end
 
-  local variables = require("expecto.variables")
-  local executor  = require("expecto.executor")
+  local variables   = require("expecto.variables")
+  local environment = require("expecto.environment")
+  local executor    = require("expecto.executor")
 
-  local resolved = variables.resolve_request(req)
+  local env_vars = environment.get_vars()
+  local resolved = variables.resolve_request(req, env_vars)
   local cmd = executor.preview_command(resolved)
   local cmd_str = table.concat(cmd, " ")
 

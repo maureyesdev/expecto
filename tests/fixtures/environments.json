@@ -1,0 +1,26 @@
+{
+  "$shared": {
+    "version": "v1",
+    "apiVersion": "2024-01",
+    "sharedKey": "shared-secret-123"
+  },
+  "local": {
+    "host": "localhost:3000",
+    "scheme": "http",
+    "baseUrl": "http://localhost:3000",
+    "token": "local-dev-token",
+    "timeout": "5"
+  },
+  "staging": {
+    "host": "staging.example.com",
+    "scheme": "https",
+    "baseUrl": "https://staging.example.com",
+    "token": "staging-token-abc"
+  },
+  "production": {
+    "host": "api.example.com",
+    "scheme": "https",
+    "baseUrl": "https://api.example.com",
+    "token": "prod-token-xyz"
+  }
+}

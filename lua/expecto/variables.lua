@@ -101,8 +101,10 @@ local function resolve_system_var(ref)
   end
 
   if name == "dotenv" then
-    -- Deferred to Phase 4 (requires file reading at execution time)
-    return ("{{" .. ref .. "}}")
+    local var_name = vim.trim(args)
+    local dotenv = require("expecto.environment").load_dotenv(vim.fn.getcwd())
+    local val = dotenv[var_name]
+    return val or ("{{" .. ref .. "}}")
   end
 
   return nil  -- unknown system var — leave unresolved

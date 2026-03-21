@@ -1,5 +1,7 @@
+@baseUrl = https://httpbin.org
+
 ### Simple GET
-GET https://httpbin.org/get HTTP/1.1
+GET {{baseUrl}}/get HTTP/1.1
 Accept: application/json
 
 ###
