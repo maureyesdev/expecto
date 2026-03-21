@@ -104,7 +104,7 @@ syntax keyword httpCurlKeyword curl contained
 syntax match httpCurlFlag /\s-\{1,2\}[a-zA-Z][a-zA-Z0-9_-]*/ contained
 
 " ── GraphQL section label (informational, not formal syntax) ─────────────────
-syntax match httpGraphQL /X-REQUEST-TYPE:\s*GraphQL/i contained
+syntax match httpGraphQL /\cX-REQUEST-TYPE:\s*GraphQL/ contained
 
 " ── Highlight links ──────────────────────────────────────────────────────────
 highlight default link httpSeparator      Special
