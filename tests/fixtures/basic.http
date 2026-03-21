@@ -1,0 +1,58 @@
+### Simple GET
+GET https://httpbin.org/get HTTP/1.1
+Accept: application/json
+
+###
+
+### POST with JSON body
+POST https://httpbin.org/post HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "expecto",
+  "version": 1
+}
+
+###
+
+### File variable usage
+@baseUrl = https://httpbin.org
+@contentType = application/json
+
+GET {{baseUrl}}/get
+Accept: {{contentType}}
+
+###
+
+### System variables
+POST https://httpbin.org/post HTTP/1.1
+Content-Type: application/json
+
+{
+  "id": "{{$guid}}",
+  "timestamp": "{{$timestamp}}",
+  "count": "{{$randomInt 1 100}}"
+}
+
+###
+
+### Named request
+# @name getStatus
+GET https://httpbin.org/status/200 HTTP/1.1
+
+###
+
+### Multi-line query params
+GET https://httpbin.org/get
+    ?foo=bar
+    &baz=qux
+
+###
+
+# This is a standalone comment
+
+// This is also a comment
+
+DELETE https://httpbin.org/delete HTTP/1.1
+Authorization: Basic user passwd
