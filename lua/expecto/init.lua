@@ -58,9 +58,10 @@ function M.run()
   local executor    = require("expecto.executor")
   local response    = require("expecto.response")
 
-  -- Resolve variables (file vars + env vars + system vars)
-  local env_vars = environment.get_vars()
-  local resolved = variables.resolve_request(req, env_vars)
+  -- Resolve variables (file vars + env vars + request chain vars + system vars)
+  local env_vars  = environment.get_vars()
+  local req_vars  = require("expecto.request_vars").get_all()
+  local resolved  = variables.resolve_request(req, env_vars, req_vars)
 
   -- Validate URL before sending
   if not resolved.url or resolved.url == "" then
@@ -74,6 +75,10 @@ function M.run()
   -- Fire the request
   executor.run(resolved, {
     on_done = function(resp, original_req)
+      -- Store named request response for chaining (Phase 5)
+      if original_req.name then
+        require("expecto.request_vars").store(original_req.name, resp)
+      end
       response.show(resp, original_req)
     end,
     on_error = function(msg)
