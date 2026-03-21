@@ -58,35 +58,68 @@ function M.run()
   local executor    = require("expecto.executor")
   local response    = require("expecto.response")
 
-  -- Resolve variables (file vars + env vars + request chain vars + system vars)
-  local env_vars  = environment.get_vars()
-  local req_vars  = require("expecto.request_vars").get_all()
-  local resolved  = variables.resolve_request(req, env_vars, req_vars)
+  local env_vars = environment.get_vars()
+  local req_vars = require("expecto.request_vars").get_all()
 
-  -- Validate URL before sending
-  if not resolved.url or resolved.url == "" then
-    vim.notify("expecto: request has no URL", vim.log.levels.ERROR)
+  --- Fire the request after all prompt values have been collected.
+  local function fire(prompt_vals)
+    -- Merge prompt values into file_vars (prompts override file/env vars)
+    local merged_vars = vim.tbl_extend("force", req.file_vars or {}, prompt_vals or {})
+    local req_copy    = vim.tbl_extend("force", {}, req, { file_vars = merged_vars })
+    local resolved    = variables.resolve_request(req_copy, env_vars, req_vars)
+
+    -- Validate URL before sending
+    if not resolved.url or resolved.url == "" then
+      vim.notify("expecto: request has no URL", vim.log.levels.ERROR)
+      return
+    end
+
+    response.show_loading(resolved)
+
+    executor.run(resolved, {
+      on_done = function(resp, original_req)
+        -- Store named request response for chaining (Phase 5)
+        if original_req.name then
+          require("expecto.request_vars").store(original_req.name, resp)
+        end
+        -- Push to history (Phase 7)
+        require("expecto.history").push(original_req, resp)
+        response.show(resp, original_req)
+      end,
+      on_error = function(msg)
+        response.show_error(msg, resolved)
+      end,
+    })
+  end
+
+  -- Collect # @prompt variable values sequentially via vim.ui.input
+  local prompts = req.prompts or {}
+  if #prompts == 0 then
+    fire({})
     return
   end
 
-  -- Show loading indicator
-  response.show_loading(resolved)
-
-  -- Fire the request
-  executor.run(resolved, {
-    on_done = function(resp, original_req)
-      -- Store named request response for chaining (Phase 5)
-      if original_req.name then
-        require("expecto.request_vars").store(original_req.name, resp)
+  local collected = {}
+  local function gather(idx)
+    if idx > #prompts then
+      fire(collected)
+      return
+    end
+    local p = prompts[idx]
+    vim.ui.input(
+      { prompt = (p.description or p.name) .. ": " },
+      function(value)
+        if value == nil then  -- user pressed <Esc> / cancelled
+          vim.notify("expecto: prompt cancelled", vim.log.levels.INFO)
+          return
+        end
+        collected[p.name] = value
+        gather(idx + 1)
       end
-      -- Push to history (Phase 7)
-      require("expecto.history").push(original_req, resp)
-      response.show(resp, original_req)
-    end,
-    on_error = function(msg)
-      response.show_error(msg, resolved)
-    end,
-  })
+    )
+  end
+
+  gather(1)
 end
 
 --- Cancel the currently in-flight request.
