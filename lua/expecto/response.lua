@@ -85,24 +85,24 @@ local function set_lines(bufnr, lines)
   vim.bo[bufnr].modifiable = false
 end
 
--- ── Status line helpers ───────────────────────────────────────────────────────
+-- ── Helpers ───────────────────────────────────────────────────────────────────
 
 --- Return a highlight group based on HTTP status code.
 local function status_hl(code)
   if not code then return "Comment" end
-  if code < 200 then return "Comment"   end
-  if code < 300 then return "DiagnosticOk"    end
-  if code < 400 then return "DiagnosticWarn"  end
+  if code < 200 then return "Comment"        end
+  if code < 300 then return "DiagnosticOk"   end
+  if code < 400 then return "DiagnosticWarn" end
   return "DiagnosticError"
 end
 
---- Format the summary line: "200 OK  │  342ms  │  1.2 KB"
-local function make_summary(response)
-  local code  = response.status_code  or 0
-  local text  = response.status_text  or ""
-  local total = (response.timing and response.timing.total_fmt) or "?ms"
-  local size  = (response.timing and response.timing.size_fmt)  or "?"
-  return ("%d %s  │  %s  │  %s"):format(code, text, total, size)
+--- Format timing annotation: "342ms  269 B"
+local function timing_text(response)
+  if not response.timing then return nil end
+  local total = response.timing.total_fmt
+  local size  = response.timing.size_fmt
+  if not total and not size then return nil end
+  return (total or "") .. "  " .. (size or "")
 end
 
 -- ── JSON pretty-printer ───────────────────────────────────────────────────────
@@ -131,15 +131,11 @@ function M.show_loading(req)
   local buf = get_or_create_buf()
   open_win(buf)
 
-  local url = (req and req.url) or "..."
   local method = (req and req.method) or "GET"
+  local url    = (req and req.url)    or "..."
 
   set_lines(buf, {
-    ("▶  %s  %s"):format(method, url),
-    string.rep("─", 60),
-    "",
-    "  Sending request…",
-    "",
+    "# Sending " .. method .. " " .. url .. " …",
   })
 
   vim.bo[buf].filetype = "http"
@@ -148,47 +144,33 @@ end
 -- ── Main render ───────────────────────────────────────────────────────────────
 
 --- Render a Response object in the response window.
+--- Format mirrors VSCode REST Client: status line → headers → blank → body.
 ---
 --- @param response table   Parsed response from curl_parser.parse()
---- @param req table        The original resolved request (for the summary header)
+--- @param req table        The original resolved request
 function M.show(response, req)
   local buf = get_or_create_buf()
   local win = open_win(buf)
 
   local cfg = config.get()
-
-  -- ── Build lines ────────────────────────────────────────────────────────────
   local lines = {}
 
-  -- Request summary line
-  local method = (req and req.method) or "?"
-  local url    = (req and req.url)    or "?"
-  table.insert(lines, ("▶  %s  %s"):format(method, url))
-  table.insert(lines, string.rep("─", 60))
-  table.insert(lines, "")
+  -- ── Status line ───────────────────────────────────────────────────────────
+  -- e.g.  HTTP/1.1 200 OK
+  local version = response.http_version or "HTTP/1.1"
+  local code    = response.status_code  or 0
+  local text    = response.status_text  or ""
+  table.insert(lines, ("%s %d %s"):format(version, code, text))
 
-  -- Status + timing
-  table.insert(lines, "  " .. make_summary(response))
-  table.insert(lines, "")
-  table.insert(lines, string.rep("─", 60))
-  table.insert(lines, "")
-
-  -- Response headers
-  local sorted_headers = {}
-  for name, value in pairs(response.headers or {}) do
-    table.insert(sorted_headers, { name = name, value = value })
-  end
-  table.sort(sorted_headers, function(a, b) return a.name < b.name end)
-
-  for _, h in ipairs(sorted_headers) do
+  -- ── Headers (original casing, original order) ────────────────────────────
+  for _, h in ipairs(response.raw_headers or {}) do
     table.insert(lines, h.name .. ": " .. h.value)
   end
 
-  table.insert(lines, "")
-  table.insert(lines, string.rep("─", 60))
+  -- ── Blank line ────────────────────────────────────────────────────────────
   table.insert(lines, "")
 
-  -- Body
+  -- ── Body ──────────────────────────────────────────────────────────────────
   local body = response.body or ""
   local ft   = curl_parser.mime_to_ft(response.mime)
 
@@ -200,24 +182,27 @@ function M.show(response, req)
     for line in (body .. "\n"):gmatch("([^\n]*)\n") do
       table.insert(lines, line)
     end
-  else
-    table.insert(lines, "  (empty body)")
   end
 
-  -- Write everything
   set_lines(buf, lines)
-
-  -- Set filetype for body highlighting (json/xml/html/etc)
-  -- We use http for the whole buffer (covers headers); for rich body
-  -- highlighting in a future phase we'll use embedded highlighting.
   vim.bo[buf].filetype = "http"
 
-  -- Apply status-code highlight via extmark on the summary line (line 4, 0-indexed 3)
+  -- ── Extmarks ──────────────────────────────────────────────────────────────
   local ns = vim.api.nvim_create_namespace("expecto_response")
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, status_hl(response.status_code), 3, 0, -1)
 
-  -- Move cursor to the top of the response window
+  -- Colour the status line by code family
+  vim.api.nvim_buf_add_highlight(buf, ns, status_hl(code), 0, 0, -1)
+
+  -- Timing as virtual text at end of status line
+  local tt = timing_text(response)
+  if tt then
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+      virt_text     = { { "  " .. tt, "Comment" } },
+      virt_text_pos = "eol",
+    })
+  end
+
   vim.api.nvim_win_set_cursor(win, { 1, 0 })
 end
 
@@ -228,17 +213,13 @@ function M.show_error(msg, req)
   local buf = get_or_create_buf()
   open_win(buf)
 
-  local lines = {
-    "▶  " .. ((req and req.method) or "?") .. "  " .. ((req and req.url) or ""),
-    string.rep("─", 60),
-    "",
-    "  ✗  Request failed",
-    "",
-    string.rep("─", 60),
-    "",
-  }
+  -- First line mimics a status line so syntax highlight applies
+  local method = (req and req.method) or "?"
+  local url    = (req and req.url)    or ""
+  local lines  = { "# Error: " .. method .. " " .. url, "" }
+
   for line in (msg .. "\n"):gmatch("([^\n]*)\n") do
-    table.insert(lines, "  " .. line)
+    table.insert(lines, line)
   end
 
   set_lines(buf, lines)
@@ -246,7 +227,7 @@ function M.show_error(msg, req)
 
   local ns = vim.api.nvim_create_namespace("expecto_response")
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, "DiagnosticError", 3, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, "DiagnosticError", 0, 0, -1)
 end
 
 return M

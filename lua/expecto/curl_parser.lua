@@ -59,19 +59,22 @@ end
 -- ── Header section parser ─────────────────────────────────────────────────────
 
 --- Parse the header section of a response block (everything before the first blank line).
---- Returns (status_line, headers_table, body_start_offset).
+--- Returns (status_line, headers_table, raw_headers_list, body_start_offset).
+--- headers_table    — lowercase-keyed for consistent programmatic lookup
+--- raw_headers_list — ordered list of {name, value} preserving original casing for display
 local function parse_header_section(text)
   -- Normalise line endings
   text = text:gsub("\r\n", "\n")
 
-  local headers  = {}
-  local lines    = {}
+  local headers     = {}   -- lowercase key → value
+  local raw_headers = {}   -- ordered: { {name=..., value=...}, ... }
+  local lines       = {}
   for line in (text .. "\n"):gmatch("([^\n]*)\n") do
     table.insert(lines, line)
   end
 
   if #lines == 0 then
-    return nil, {}, 1
+    return nil, {}, {}, 1
   end
 
   local status_line = lines[1]
@@ -80,11 +83,9 @@ local function parse_header_section(text)
   for i = 2, #lines do
     local line = lines[i]
     if line == "" then
-      -- Blank line — everything after this is the body
-      -- Calculate byte offset: sum of preceding line lengths + newlines
       local offset = 0
       for j = 1, i do
-        offset = offset + #lines[j] + 1  -- +1 for the \n
+        offset = offset + #lines[j] + 1
       end
       body_start = offset
       break
@@ -92,12 +93,12 @@ local function parse_header_section(text)
 
     local name, value = line:match("^([%w][%w%-%_]*):%s*(.*)$")
     if name then
-      -- Lowercase header names for consistent lookup
-      headers[name:lower()] = value
+      headers[name:lower()] = value                         -- for lookups
+      table.insert(raw_headers, { name = name, value = value })  -- for display
     end
   end
 
-  return status_line, headers, body_start
+  return status_line, headers, raw_headers, body_start
 end
 
 -- ── Status line parser ────────────────────────────────────────────────────────
@@ -152,7 +153,7 @@ function M.parse(raw)
   end
 
   -- 4. Parse status + headers
-  local status_line, headers, _ = parse_header_section(header_section)
+  local status_line, headers, raw_headers, _ = parse_header_section(header_section)
   local http_version, status_code, status_text = parse_status_line(status_line)
 
   -- 5. Content-Type (case-insensitive lookup already done by lowercase headers)
@@ -166,7 +167,8 @@ function M.parse(raw)
     status_code  = status_code  or 0,
     status_text  = status_text  or "",
     http_version = http_version or "HTTP/1.1",
-    headers      = headers,
+    headers      = headers,       -- lowercase-keyed, for programmatic use
+    raw_headers  = raw_headers,   -- ordered, original casing, for display
     body         = body,
     content_type = content_type,
     mime         = mime,

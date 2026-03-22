@@ -276,3 +276,100 @@ describe("expecto.curl_parser — edge cases", function()
     assert.truthy(resp.body:find("redirected"))
   end)
 end)
+
+-- ── raw_headers (original casing + order preserved) ──────────────────────────
+
+describe("expecto.curl_parser — raw_headers", function()
+  local function raw_response(header_lines, body)
+    -- Build a raw curl output string with headers in exact order
+    local parts = { "HTTP/1.1 200 OK" }
+    for _, h in ipairs(header_lines) do
+      table.insert(parts, h)
+    end
+    table.insert(parts, "")  -- blank line
+    table.insert(parts, body or "")
+    table.insert(parts, "")
+    table.insert(parts, "")
+    table.insert(parts, TIMING_MARKER)
+    table.insert(parts, "time_total:0.1")
+    table.insert(parts, "time_namelookup:0.001")
+    table.insert(parts, "time_connect:0.01")
+    table.insert(parts, "time_starttransfer:0.09")
+    table.insert(parts, "size_download:10")
+    table.insert(parts, "http_code:200")
+    return table.concat(parts, "\n")
+  end
+
+  it("raw_headers is a list (not a map)", function()
+    local resp = curl_parser.parse(raw_response(
+      { "Content-Type: application/json", "X-Request-Id: abc" },
+      "{}"
+    ))
+    assert.is_table(resp.raw_headers)
+    assert.equals(2, #resp.raw_headers)
+  end)
+
+  it("preserves original header name casing", function()
+    local resp = curl_parser.parse(raw_response(
+      { "Content-Type: application/json", "X-Custom-Header: value" },
+      "{}"
+    ))
+    local names = {}
+    for _, h in ipairs(resp.raw_headers) do
+      table.insert(names, h.name)
+    end
+    assert.truthy(vim.tbl_contains(names, "Content-Type"))
+    assert.truthy(vim.tbl_contains(names, "X-Custom-Header"))
+    -- NOT lowercased
+    assert.is_false(vim.tbl_contains(names, "content-type"))
+  end)
+
+  it("preserves header order (as received from server)", function()
+    local resp = curl_parser.parse(raw_response(
+      { "Date: Mon, 01 Jan 2024 00:00:00 GMT", "Content-Type: text/plain", "X-Rate-Limit: 100" },
+      "hello"
+    ))
+    assert.equals("Date",          resp.raw_headers[1].name)
+    assert.equals("Content-Type",  resp.raw_headers[2].name)
+    assert.equals("X-Rate-Limit",  resp.raw_headers[3].name)
+  end)
+
+  it("each entry has both name and value", function()
+    local resp = curl_parser.parse(raw_response(
+      { "Content-Length: 42" },
+      "hello"
+    ))
+    assert.equals("Content-Length", resp.raw_headers[1].name)
+    assert.equals("42",             resp.raw_headers[1].value)
+  end)
+
+  it("lowercase headers table still works for programmatic lookup", function()
+    local resp = curl_parser.parse(raw_response(
+      { "Content-Type: application/json" },
+      "{}"
+    ))
+    -- raw_headers preserves case; headers map is lowercased
+    assert.equals("application/json", resp.headers["content-type"])
+    assert.is_nil(resp.headers["Content-Type"])
+  end)
+
+  it("returns empty raw_headers list when no headers present", function()
+    -- Minimal valid response with no headers
+    local raw = table.concat({
+      "HTTP/1.1 204 No Content",
+      "",
+      "",
+      "",
+      TIMING_MARKER,
+      "time_total:0.1",
+      "time_namelookup:0.001",
+      "time_connect:0.01",
+      "time_starttransfer:0.09",
+      "size_download:0",
+      "http_code:204",
+    }, "\n")
+    local resp = curl_parser.parse(raw)
+    assert.is_table(resp.raw_headers)
+    assert.equals(0, #resp.raw_headers)
+  end)
+end)
