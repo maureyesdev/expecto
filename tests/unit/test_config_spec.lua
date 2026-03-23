@@ -46,6 +46,17 @@ describe("expecto.config", function()
     it("has empty certificates table", function()
       assert.same({}, config.defaults().certificates)
     end)
+
+    it("has a default cookie_jar path inside stdpath cache", function()
+      local jar = config.defaults().cookie_jar
+      assert.is_string(jar)
+      assert.truthy(jar:find("expecto"))
+    end)
+
+    it("allows cookie_jar to be disabled by setting false", function()
+      config.setup({ cookie_jar = false })
+      assert.is_false(config.get().cookie_jar)
+    end)
   end)
 
   describe("setup()", function()

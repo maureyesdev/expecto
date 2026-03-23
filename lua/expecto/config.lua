@@ -12,6 +12,7 @@ local M = {}
 ---@field format_response_body boolean Auto-format JSON/XML response bodies (requires jq for JSON)
 ---@field default_headers table<string, string> Headers added to every request
 ---@field certificates table<string, table> Per-host SSL certificate configuration
+---@field cookie_jar string|false Path to the cookie jar file; false disables cookie persistence
 
 local defaults = {
   response_split = "vertical",
@@ -25,6 +26,7 @@ local defaults = {
   format_response_body = true,
   default_headers = {},
   certificates = {},
+  cookie_jar = vim.fn.stdpath("cache") .. "/expecto/cookies.txt",
 }
 
 ---@type ExpectoConfig

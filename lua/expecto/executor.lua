@@ -4,6 +4,7 @@ local M = {}
 
 local curl_builder = require("expecto.curl_builder")
 local curl_parser  = require("expecto.curl_parser")
+local config       = require("expecto.config")
 
 -- Track the running job so we can cancel it
 local _current_job = nil
@@ -54,7 +55,11 @@ function M.run(req, opts)
     end
     args = { "sh", "-c", raw }
   else
-    args = curl_builder.build(req)
+    local cookie_jar = config.get().cookie_jar
+    if cookie_jar then
+      vim.fn.mkdir(vim.fn.fnamemodify(cookie_jar, ":h"), "p")
+    end
+    args = curl_builder.build(req, { cookie_jar = cookie_jar })
   end
 
   local stdout_chunks = {}

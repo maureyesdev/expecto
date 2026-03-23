@@ -285,6 +285,8 @@ end)
 -- ── Cookie jar ────────────────────────────────────────────────────────────────
 
 describe("expecto.curl_builder — cookie jar", function()
+  before_each(function() config.setup({}) end)
+
   it("adds -b and -c when cookie_jar is provided", function()
     local args = builder.build(req(), { cookie_jar = "/tmp/cookies.txt" })
     assert.truthy(vim.tbl_contains(args, "-b"))
@@ -298,6 +300,32 @@ describe("expecto.curl_builder — cookie jar", function()
       { cookie_jar = "/tmp/cookies.txt" }
     )
     assert.is_false(vim.tbl_contains(args, "-b"))
+  end)
+
+  it("omits cookie jar flags when cookie_jar is false (disabled)", function()
+    local args = builder.build(req(), { cookie_jar = false })
+    assert.is_false(vim.tbl_contains(args, "-b"))
+    assert.is_false(vim.tbl_contains(args, "-c"))
+  end)
+
+  it("uses cookie_jar from config — simulates executor wiring", function()
+    -- This mirrors exactly what executor.lua does:
+    --   local cookie_jar = config.get().cookie_jar
+    --   args = curl_builder.build(req, { cookie_jar = cookie_jar })
+    config.setup({ cookie_jar = "/tmp/expecto-test-cookies.txt" })
+    local jar = config.get().cookie_jar
+    local args = builder.build(req(), { cookie_jar = jar })
+    assert.truthy(vim.tbl_contains(args, "-b"))
+    assert.truthy(vim.tbl_contains(args, "-c"))
+    assert.truthy(vim.tbl_contains(args, "/tmp/expecto-test-cookies.txt"))
+  end)
+
+  it("disabling cookie_jar in config suppresses flags — simulates executor wiring", function()
+    config.setup({ cookie_jar = false })
+    local jar = config.get().cookie_jar
+    local args = builder.build(req(), { cookie_jar = jar })
+    assert.is_false(vim.tbl_contains(args, "-b"))
+    assert.is_false(vim.tbl_contains(args, "-c"))
   end)
 end)
 
